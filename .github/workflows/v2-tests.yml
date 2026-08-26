@@ -1,4 +1,4 @@
-name: V2 Flower Bot Tests
+name: V2/V3 Flower Bot Tests
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-v2:
+  test-v2-v3:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,13 +28,15 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
-      - name: Run V2 tests
+      - name: Run all flower engine tests
         working-directory: v2
         run: |
           python -m pytest -v
 
-      - name: Compile V2 files
+      - name: Compile flower bot files
         run: |
           python -m py_compile v2/flower_engine_v2.py
           python -m py_compile v2/flower_engine_pt_south.py
+          python -m py_compile v2/flower_engine_v3.py
           python -m py_compile v2/main_v2.py
+          python -m py_compile main.py
