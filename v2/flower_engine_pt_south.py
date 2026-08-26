@@ -1,4 +1,7 @@
-from .flower_engine_v2 import BASE, calculate as _base_calculate, format_result
+try:
+    from .flower_engine_v2 import BASE, calculate as _base_calculate, format_result
+except ImportError:
+    from flower_engine_v2 import BASE, calculate as _base_calculate, format_result
 
 
 SOUTH_ORDER = {
