@@ -246,7 +246,7 @@ def _add_pt_base(stops, total, lines, warnings):
     region = max(regions, key=lambda name: SOUTH_ORDER[name])
     amount = BASE[region]
     lines.append({
-        "name": f"PT終點打底（{region}）",
+        "name": f"PT推定終點打底（{region}）",
         "amount": amount,
         "desc": "每趟只計1個；排除集貨/集運後取南下最南端宅配區域",
     })
