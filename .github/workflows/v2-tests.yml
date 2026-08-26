@@ -31,9 +31,10 @@ jobs:
       - name: Run V2 tests
         working-directory: v2
         run: |
-          python -m pytest -v test_flower_engine_v2.py
+          python -m pytest -v
 
       - name: Compile V2 files
         run: |
           python -m py_compile v2/flower_engine_v2.py
+          python -m py_compile v2/flower_engine_pt_south.py
           python -m py_compile v2/main_v2.py
