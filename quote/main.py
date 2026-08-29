@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, Header, HTTPException
 
 app = FastAPI()
 TZ = ZoneInfo("Asia/Taipei")
+MAPS_ENABLED = os.getenv("ENABLE_GOOGLE_MAPS", "false").lower() in {"1", "true", "yes", "on"}
 
 TAOYUAN_PRICES = {
     "宜蘭市以北": [2100,2200,2500,3500], "宜蘭市以南": [2200,2300,2600,3600],
@@ -102,7 +103,7 @@ def extract_addresses(text):
 
 async def google_route(addresses):
     key = os.getenv("GOOGLE_MAPS_API_KEY", "")
-    if not key or len(addresses)<2: return None
+    if not MAPS_ENABLED or not key or len(addresses)<2: return None
     inter=[{"address":a} for a in addresses[1:-1]]
     body={"origin":{"address":addresses[0]},"destination":{"address":addresses[-1]},
           "travelMode":"DRIVE","routingPreference":"TRAFFIC_AWARE",
@@ -140,7 +141,7 @@ def calculate_quote(text, dt):
 
 async def build_reply(text):
     if text.strip() in {"幫助","說明","help","HELP","報價幫助"}:
-        return "🤖 小天AI報價\n群組請用『報價』開頭。\n例：報價 12/7 00:30 埔里三點→桃園機場 九人座 送機"
+        return "🤖 小天AI報價\n群組訊息只要包含『報價』兩個字才會觸發。\n例：請幫我報價 12/7 00:30 埔里→桃園機場 九人座 送機"
     dt=parse_datetime(text); q=calculate_quote(text,dt)
     if not q:
         return "⚠️ 試算版目前先支援桃園機場正式價目。\n請輸入日期時間、地區/完整地址、車型、接機或送機。"
@@ -152,14 +153,12 @@ async def build_reply(text):
     for name,val in q["extras"]:
         lines.append(f"{name}：+${val:,}" if isinstance(val,int) else f"{name}：{val}")
     lines.append(f"💰 建議客報：${q['total']:,}")
-    if not os.getenv("GOOGLE_MAPS_API_KEY"):
-        lines.append("\nℹ️ Google Maps 金鑰尚未設定，里程/時間暫不顯示。")
     return "\n".join(lines)
 
 @app.get("/")
 @app.get("/health")
 async def health():
-    return {"ok":True,"service":"xiaotian-quote-bot","maps":bool(os.getenv("GOOGLE_MAPS_API_KEY"))}
+    return {"ok":True,"service":"xiaotian-quote-bot","maps":MAPS_ENABLED and bool(os.getenv("GOOGLE_MAPS_API_KEY"))}
 
 @app.post("/webhook")
 async def webhook(req:Request,x_line_signature:str|None=Header(default=None)):
@@ -170,8 +169,8 @@ async def webhook(req:Request,x_line_signature:str|None=Header(default=None)):
     for ev in body.get("events",[]):
         if ev.get("type")!="message" or ev.get("message",{}).get("type")!="text": continue
         text=ev["message"].get("text","").strip(); source=ev.get("source",{}).get("type")
-        if source in {"group","room"} and not text.startswith("報價"): continue
-        if text.startswith("報價"): text=text[2:].strip()
+        if source in {"group","room"} and "報價" not in text: continue
+        if "報價" in text: text=text.replace("報價","",1).strip()
         token=ev.get("replyToken")
         if token:
             try: await line_reply(token,await build_reply(text))
