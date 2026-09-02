@@ -31,18 +31,42 @@ def _apply_quote_patch(module):
         return None
 
     def missing_info_reply(missing, parsed=None):
-        # 資訊不足時不顯示冗長解析結果，直接給可複製的簡潔格式。
-        return (
-            "📋 資訊不完整，請複製下列格式填寫後再傳送：\n\n"
-            "日期：\n"
-            "時間：\n"
-            "出發地：\n"
-            "目的地：\n"
-            "人數：\n"
-            "行李：\n"
-            "行程：送機／接機／送船／接船\n\n"
-            "★報價★"
-        )
+        # 分成兩個 LINE 訊息：第一則說明，第二則只有可直接複製填寫的格式。
+        return [
+            "📋 資訊不完整，請複製下一則格式填寫後再傳送：",
+            (
+                "日期：\n"
+                "時間：\n"
+                "出發地：\n"
+                "目的地：\n"
+                "人數：\n"
+                "行李：\n"
+                "行程：送機／接機／送船／接船\n"
+                "（擇一）\n\n"
+                "★報價★"
+            ),
+        ]
+
+    async def line_reply(token, text):
+        """LINE reply supports one text or multiple text bubbles in one reply token."""
+        access = module.os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+        if not access:
+            raise RuntimeError("LINE_CHANNEL_ACCESS_TOKEN missing")
+
+        if isinstance(text, (list, tuple)):
+            texts = [str(item) for item in text if str(item).strip()][:5]
+        else:
+            texts = [str(text)]
+        messages = [{"type": "text", "text": item[:4900]} for item in texts]
+
+        async with module.httpx.AsyncClient(timeout=15) as c:
+            r = await c.post(
+                "https://api.line.me/v2/bot/message/reply",
+                headers={"Authorization": f"Bearer {access}", "Content-Type": "application/json"},
+                json={"replyToken": token, "messages": messages},
+            )
+            print("[LINE]", r.status_code, r.text, flush=True)
+            r.raise_for_status()
 
     def add_surcharges(base, dt, pickup, terminal, vehicle_idx, people, text, alphard=False):
         total, extras, pending = original_surcharges(
@@ -76,6 +100,7 @@ def _apply_quote_patch(module):
 
     module.detect_area_for_terminal = detect_area_for_terminal
     module.missing_info_reply = missing_info_reply
+    module.line_reply = line_reply
     module.add_surcharges = add_surcharges
     module._QUOTE_RULE_PATCHED = True
 
