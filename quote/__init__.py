@@ -10,13 +10,28 @@ import sys
 
 
 def _apply_quote_patch(module):
-    if getattr(module, "_KEELUNG_RULE_PATCHED", False):
+    if getattr(module, "_QUOTE_RULE_PATCHED", False):
         return
 
-    original = module.add_surcharges
+    original_surcharges = module.add_surcharges
+    original_area = module.detect_area_for_terminal
+
+    def detect_area_for_terminal(text, terminal, alphard=False):
+        area = original_area(text, terminal, alphard=alphard)
+        if area:
+            return area
+
+        # 客人常省略「台中市」只寫行政區＋路名。
+        # 已確認案例：大雅區屬台中清泉崗機場價目中的「台中市區」。
+        if terminal == "台中清泉崗機場" and not alphard:
+            work = module._text_without_terminal(text, terminal)
+            if "大雅區" in work or "大雅" in work:
+                return "台中市區"
+
+        return None
 
     def add_surcharges(base, dt, pickup, terminal, vehicle_idx, people, text, alphard=False):
-        total, extras, pending = original(
+        total, extras, pending = original_surcharges(
             base, dt, pickup, terminal, vehicle_idx, people, text, alphard
         )
 
@@ -45,8 +60,9 @@ def _apply_quote_patch(module):
 
         return total, extras, pending
 
+    module.detect_area_for_terminal = detect_area_for_terminal
     module.add_surcharges = add_surcharges
-    module._KEELUNG_RULE_PATCHED = True
+    module._QUOTE_RULE_PATCHED = True
 
 
 class _QuoteMainLoader(importlib.abc.Loader):
