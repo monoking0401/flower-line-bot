@@ -30,6 +30,20 @@ def _apply_quote_patch(module):
 
         return None
 
+    def missing_info_reply(missing, parsed=None):
+        # 資訊不足時不顯示冗長解析結果，直接給可複製的簡潔格式。
+        return (
+            "📋 資訊不完整，請複製下列格式填寫後再傳送：\n\n"
+            "日期：\n"
+            "時間：\n"
+            "出發地：\n"
+            "目的地：\n"
+            "人數：\n"
+            "行李：\n"
+            "行程：送機／接機／送船／接船\n\n"
+            "★報價★"
+        )
+
     def add_surcharges(base, dt, pickup, terminal, vehicle_idx, people, text, alphard=False):
         total, extras, pending = original_surcharges(
             base, dt, pickup, terminal, vehicle_idx, people, text, alphard
@@ -61,6 +75,7 @@ def _apply_quote_patch(module):
         return total, extras, pending
 
     module.detect_area_for_terminal = detect_area_for_terminal
+    module.missing_info_reply = missing_info_reply
     module.add_surcharges = add_surcharges
     module._QUOTE_RULE_PATCHED = True
 
