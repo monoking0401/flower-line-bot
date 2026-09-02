@@ -33,7 +33,7 @@ def _apply_quote_patch(module):
     def missing_info_reply(missing, parsed=None):
         # 分成兩個 LINE 訊息：第一則說明，第二則只有可直接複製填寫的格式。
         return [
-            "📋 資訊不完整，請複製下一則格式填寫後再傳送：",
+            "📋 請複製下一則格式，填寫完成後傳送給我即可：",
             (
                 "日期：\n"
                 "時間：\n"
