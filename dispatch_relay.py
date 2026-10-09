@@ -1,8 +1,8 @@
-"""Authorized reuse of the flower LINE channel; credentials never leave this service.
+"""Dedicated Xiaotian dispatch LINE channel; credentials never leave this service.
 
 Only verified binding commands are forwarded to the member backend. Ordinary group
 chat is ignored. All push requests originate from the authenticated member backend.
-The old flower and independent quotation implementations remain available unchanged.
+The old flower implementation is retired. Independent quotation code is separate.
 """
 import base64
 import hashlib
@@ -16,7 +16,7 @@ import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
-app = FastAPI()
+app = FastAPI(title="小天報單機器人")
 GROUP = re.compile(r"C[0-9a-f]{32}\Z")
 USER = re.compile(r"U[0-9a-f]{32}\Z")
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z")
@@ -112,7 +112,7 @@ async def line_request(method, path, body=None, retry_key=None):
 @app.get("/")
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "flower-line-bot", "mode": "dispatch-relay", "version": "1.0.0", "native_contact_card": False}
+    return {"ok": True, "service": "xiaotian-dispatch-bot", "mode": "dispatch-relay", "version": "1.0.1", "native_contact_card": False}
 
 
 @app.post("/relay/info")

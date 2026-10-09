@@ -112,12 +112,12 @@ def test_info_uses_existing_token_server_side_and_confirms_real_bot_and_endpoint
     assert r.status_code==200 and r.json()["basic_id"]=="@017pcooo" and r.json()["webhook_active"] is True
     assert "test-token" not in r.text and r.json()["native_contact_card"] is False
 
-def test_default_main_retains_old_flower_and_quote_files(client,monkeypatch):
+@pytest.mark.parametrize("old_flag", [None, "false", "true"])
+def test_dispatch_entrypoint_never_reenables_flower_pricing(client,monkeypatch,old_flag):
     import importlib,main
-    monkeypatch.delenv("FLOWER_DISPATCH_RELAY_ENABLED",raising=False)
-    importlib.reload(main)
-    from v2 import main_v2
-    assert main.app is main_v2.app
-    monkeypatch.setenv("FLOWER_DISPATCH_RELAY_ENABLED","true")
+    if old_flag is None:
+        monkeypatch.delenv("FLOWER_DISPATCH_RELAY_ENABLED",raising=False)
+    else:
+        monkeypatch.setenv("FLOWER_DISPATCH_RELAY_ENABLED",old_flag)
     importlib.reload(main)
     assert main.app is relay.app

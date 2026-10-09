@@ -1,10 +1,13 @@
-# 2026-10-10 花市機器人改作派車轉送
+# 2026-10-10 小天報單機器人專用入口
 
-使用者已停止跑花市，授權沿用「花市專用」@017pcooo。
-既有花市原碼、v2、報價服務原碼完整保留。main.py 只依環境開關選擇入口。
+使用者已停止跑花市，授權沿用 @017pcooo，指定新的 LINE 顯示名稱「小天報單機器人」。
+LINE 顯示名稱必须由 Official Account Manager 修改，再用官方 bot/info 核對；改程式標題不代表 LINE 已改名。
+既有花市原碼、v2、報價服務原碼保留作歷史。main.py 固定使用 dispatch_relay.app。
 
-- FLOWER_DISPATCH_RELAY_ENABLED=true：花市服務改用 dispatch_relay.app，停止花市計價／自動回覆。
-- 關閉或移除該值：回到原花市入口；不刪除程式與歴史。
+- 花市計價／自動回覆已退休，不再提供此帳號的啟動入口。
+- FLOWER_DISPATCH_RELAY_ENABLED 為過期設定；任何值或未設定，都不會恢復花市報價。
+- APK 的轉送開關仍能隨時停止這支手機發起新的轉送，關閉不會啟動花市功能。
+- 健康資訊 service=xiaotian-dispatch-bot、version=1.0.1，是後端識別，並非 LINE 顯示名稱驗證。
 - LINE_CHANNEL_SECRET／LINE_CHANNEL_ACCESS_TOKEN 沿用此服務既有秘密，沒有讀出／複製到另一服務。
 - LINE_RELAY_BRIDGE_KEY：兩個伺服器共用獨立隨機密鑰，至少32字元；不得保存於Git／文件／APK。
 - LINE_RELAY_BOT_ID：以原Token向官方 bot/info 實際核對後設定，不能拿Basic ID代替。
