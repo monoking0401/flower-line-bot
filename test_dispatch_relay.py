@@ -112,6 +112,34 @@ def test_info_uses_existing_token_server_side_and_confirms_real_bot_and_endpoint
     assert r.status_code==200 and r.json()["basic_id"]=="@017pcooo" and r.json()["webhook_active"] is True
     assert "test-token" not in r.text and r.json()["native_contact_card"] is False
 
+def test_official_webhook_diagnostic_uses_only_configured_endpoint_and_omits_private_error(client,monkeypatch):
+    mock=AsyncMock(side_effect=[httpx.Response(200,json={"userId":BOT}),
+        httpx.Response(200,json={"endpoint":"https://flower-line-bot.onrender.com/webhook","active":True}),
+        httpx.Response(200,json={"success":False,"statusCode":401,"reason":"HTTP_STATUS_ERROR","detail":"private-detail"})])
+    monkeypatch.setattr(relay,"line_request",mock)
+    raw,h=signed("/relay/info",{"verify_webhook":True})
+    r=client.post("/relay/info",content=raw,headers=h)
+    assert r.status_code==200 and r.json()["webhook_test"]=={"success":False,"status_code":401}
+    assert "private-detail" not in r.text
+    assert mock.await_args.args==("POST","/v2/bot/channel/webhook/test",{})
+
+@pytest.mark.parametrize("body",[{"verify_webhook":False},{"verify_webhook":1},
+    {"verify_webhook":True,"endpoint":"https://evil.example"},{"endpoint":"https://evil.example"}])
+def test_webhook_diagnostic_cannot_accept_custom_endpoint_or_loose_flag(client,monkeypatch,body):
+    mock=AsyncMock();monkeypatch.setattr(relay,"line_request",mock)
+    raw,h=signed("/relay/info",body)
+    assert client.post("/relay/info",content=raw,headers=h).status_code==400
+    mock.assert_not_awaited()
+
+def test_binding_receipt_log_contains_counts_without_codes_group_names_or_sender(client,monkeypatch,capsys):
+    mock=AsyncMock();monkeypatch.setattr(relay,"forward_binding",mock)
+    raw,h=line_signed(webhook([event(),event("private-ordinary-chat")]))
+    assert client.post("/webhook",content=raw,headers=h).status_code==200
+    output=capsys.readouterr().out
+    assert json.loads(output)=={"event":"dispatch_webhook_received","event_count":2,"binding_count":1}
+    for private in ["private-ordinary-chat",GROUP,"a"*24,BOT]:
+        assert private not in output
+
 @pytest.mark.parametrize("old_flag", [None, "false", "true"])
 def test_dispatch_entrypoint_never_reenables_flower_pricing(client,monkeypatch,old_flag):
     import importlib,main

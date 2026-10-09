@@ -16,7 +16,7 @@ import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
-app = FastAPI(title="小天報單機器人")
+app = FastAPI(title="小天報單專用機")
 GROUP = re.compile(r"C[0-9a-f]{32}\Z")
 USER = re.compile(r"U[0-9a-f]{32}\Z")
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z")
@@ -112,13 +112,13 @@ async def line_request(method, path, body=None, retry_key=None):
 @app.get("/")
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "xiaotian-dispatch-bot", "mode": "dispatch-relay", "version": "1.0.1", "native_contact_card": False}
+    return {"ok": True, "service": "xiaotian-dispatch-bot", "mode": "dispatch-relay", "version": "1.0.2", "native_contact_card": False}
 
 
 @app.post("/relay/info")
 async def info(req: Request):
     body = await authenticated(req)
-    if body != {}:
+    if body != {} and not (exact(body, ["verify_webhook"]) and body["verify_webhook"] is True):
         raise HTTPException(400, "Invalid request")
     bot = await line_request("GET", "/v2/bot/info")
     endpoint = await line_request("GET", "/v2/bot/channel/webhook/endpoint")
@@ -128,10 +128,23 @@ async def info(req: Request):
         b, w = bot.json(), endpoint.json()
         if not USER.fullmatch(b.get("userId", "")):
             raise ValueError()
-        return {"bot_id": b["userId"], "display_name": b.get("displayName"), "basic_id": b.get("basicId"),
+        result = {"bot_id": b["userId"], "display_name": b.get("displayName"), "basic_id": b.get("basicId"),
                 "webhook_endpoint": w.get("endpoint"), "webhook_active": w.get("active"), "native_contact_card": False}
     except (ValueError, TypeError):
         raise HTTPException(502, "Invalid LINE configuration response")
+    if body:
+        # Official communication check only: no custom endpoint or group message.
+        check = await line_request("POST", "/v2/bot/channel/webhook/test", {})
+        if check.status_code != 200:
+            raise HTTPException(502, "LINE webhook check unavailable")
+        try:
+            checked = check.json()
+            if type(checked.get("success")) is not bool or type(checked.get("statusCode")) is not int:
+                raise ValueError()
+            result["webhook_test"] = {"success": checked["success"], "status_code": checked["statusCode"]}
+        except (ValueError, TypeError):
+            raise HTTPException(502, "Invalid LINE webhook check")
+    return result
 
 
 @app.post("/relay/line")
@@ -166,7 +179,16 @@ async def forward_binding(body):
         async with httpx.AsyncClient(timeout=12, follow_redirects=False) as client:
             response = await client.post(DOWNSTREAM + path, content=raw, headers={"Content-Type": "application/json",
                 "X-Relay-Timestamp": stamp, "X-Relay-Signature": signature(secret(), stamp, "POST", path, raw)})
-        print("[DISPATCH BIND]", response.status_code, flush=True)
+        summary = {"event": "dispatch_binding_forward", "status": response.status_code}
+        if response.status_code == 200:
+            try:
+                counters = response.json().get("binding_counts", {})
+                for name in ("bound", "name_mismatch", "code_not_found", "ignored"):
+                    if type(counters.get(name)) is int and 0 <= counters[name] <= 100:
+                        summary[name] = counters[name]
+            except (ValueError, TypeError, AttributeError):
+                pass
+        print(json.dumps(summary), flush=True)
     except Exception:
         # A pending binding can be repeated; there is no automatic sending queue.
         print("[DISPATCH BIND] response not confirmed", flush=True)
@@ -200,6 +222,8 @@ async def webhook(req: Request, background: BackgroundTasks):
                 GROUP.fullmatch(source["groupId"]) and isinstance(event.get("timestamp"), int) and not isinstance(event["timestamp"], bool)):
             selected.append({"type": "message", "mode": "active", "timestamp": event["timestamp"],
                 "source": {"type": "group", "groupId": source["groupId"]}, "message": {"type": "text", "text": message["text"]}})
+    print(json.dumps({"event": "dispatch_webhook_received", "event_count": len(body["events"]),
+                      "binding_count": len(selected)}), flush=True)
     if selected:
         background.add_task(forward_binding, {"destination": bot, "events": selected})
     return {"ok": True}

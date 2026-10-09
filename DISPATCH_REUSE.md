@@ -1,13 +1,13 @@
 # 2026-10-10 小天報單機器人專用入口
 
-使用者已停止跑花市，授權沿用 @017pcooo，指定新的 LINE 顯示名稱「小天報單機器人」。
+使用者已停止跑花市，授權沿用 @017pcooo，最新指定的 LINE 顯示名稱「小天報單專用機」（取代先前名稱）。
 LINE 顯示名稱必须由 Official Account Manager 修改，再用官方 bot/info 核對；改程式標題不代表 LINE 已改名。
 既有花市原碼、v2、報價服務原碼保留作歷史。main.py 固定使用 dispatch_relay.app。
 
 - 花市計價／自動回覆已退休，不再提供此帳號的啟動入口。
 - FLOWER_DISPATCH_RELAY_ENABLED 為過期設定；任何值或未設定，都不會恢復花市報價。
 - APK 的轉送開關仍能隨時停止這支手機發起新的轉送，關閉不會啟動花市功能。
-- 健康資訊 service=xiaotian-dispatch-bot、version=1.0.1，是後端識別，並非 LINE 顯示名稱驗證。
+- 健康資訊 service=xiaotian-dispatch-bot、version=1.0.2，是後端識別，並非 LINE 顯示名稱驗證。
 - LINE_CHANNEL_SECRET／LINE_CHANNEL_ACCESS_TOKEN 沿用此服務既有秘密，沒有讀出／複製到另一服務。
 - LINE_RELAY_BRIDGE_KEY：兩個伺服器共用獨立隨機密鑰，至少32字元；不得保存於Git／文件／APK。
 - LINE_RELAY_BOT_ID：以原Token向官方 bot/info 實際核對後設定，不能拿Basic ID代替。
@@ -21,4 +21,7 @@ HMAC涵蓋時間／方法／路徑／完整body，±60秒；推送必須帶穩�
 LINE受理不等於已送達或已讀。409只有官方接受header才視為已受理；不盲目重送。
 綁定是短期記憶體，不是持久佇列；背景投遞失敗時在APK仍顯示等待，可重貼同一綁定指令或重產生碼。
 原生名片仍未完成，不能拿名字或假名片替代。免費Render休眠仍可能延遲或逾時，正式會員營運需再決定常駐主機。
+產碼前派車後端會用經HMAC驗證的 /relay/info 喚醒並核對實際Bot／Webhook，再開始十分鐘效期；失敗不產新碼。
+/relay/info 的管理診斷只額外接受 {"verify_webhook":true}，僅對官方已設定Webhook做空事件連線測試，不接受任意網址、不發群組訊息。
+接收及轉交日誌只記固定事件與計數，不記指令碼、群組名稱、groupId、sender或群聊原文。
 報價Bot的啟動指令 quote.main:app、憑證與程式均不更改；同庫main更新可能觸發它重新部署，需核對健康。
