@@ -53,7 +53,7 @@ def document_messages(messages):
         return False
     image, pdf = messages
     return (exact(image, ["type", "originalContentUrl", "previewImageUrl"]) and image["type"] == "image" and
-            image["originalContentUrl"] == image["previewImageUrl"] and document_url(image["originalContentUrl"]) and
+            document_url(image["previewImageUrl"]) and document_url(image["originalContentUrl"]) and
             exact(pdf, ["type", "text"]) and pdf["type"] == "text" and
             isinstance(pdf["text"], str) and pdf["text"].startswith("派車單PDF：") and document_url(pdf["text"][7:]))
 
