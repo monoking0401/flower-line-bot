@@ -149,3 +149,38 @@ def test_dispatch_entrypoint_never_reenables_flower_pricing(client,monkeypatch,o
         monkeypatch.setenv("FLOWER_DISPATCH_RELAY_ENABLED",old_flag)
     importlib.reload(main)
     assert main.app is relay.app
+
+@pytest.mark.parametrize('name',['送機格式','接機格式','接駁格式'])
+def test_customer_templates_short_multiline(name):
+    value=relay.template_reply(name)
+    assert '\n\n姓名：\n電話：' in value
+    assert '行李（尺寸／件數）：' in value
+    assert '您好' not in value and '不代表' not in value
+    assert relay.template_reply(name+'。') == value
+    assert relay.template_reply('不要'+name) is None
+
+def test_template_webhook_replies_without_forwarding_customer_context(client,monkeypatch):
+    mock=AsyncMock(); forward=AsyncMock()
+    monkeypatch.setattr(relay,'reply_text',mock)
+    monkeypatch.setattr(relay,'forward_document',forward)
+    e=event('送機格式');raw,h=line_signed(webhook([e]))
+    assert client.post('/webhook',content=raw,headers=h).status_code==200
+    mock.assert_awaited_once_with('never-forward',relay.TEMPLATES['送機格式'])
+    forward.assert_not_awaited()
+
+def test_document_command_private_only(client,monkeypatch):
+    mock=AsyncMock();monkeypatch.setattr(relay,'forward_document',mock)
+    e=event('公司清單');raw,h=line_signed(webhook([e]))
+    assert client.post('/webhook',content=raw,headers=h).status_code==200
+    mock.assert_not_awaited()
+    e['source']={'type':'user','userId':BOT};raw,h=line_signed(webhook([e]))
+    assert client.post('/webhook',content=raw,headers=h).status_code==200
+    assert mock.await_count==1
+
+def test_document_image_pdf_whitelist():
+    url='https://tendispatchai.onrender.com/v1/documents/download?t=signed'
+    messages=[{'type':'image','originalContentUrl':url,'previewImageUrl':url},{'type':'text','text':'派車單PDF：'+url}]
+    assert relay.document_messages(messages)
+    for bad in ['https://evil.test/file','https://tendispatchai.onrender.com@evil.test/v1/documents/download?t=signed',url+'&redirect=evil',url+'#fragment']:
+        messages[0]['originalContentUrl']=bad;messages[0]['previewImageUrl']=bad
+        assert not relay.document_messages(messages)

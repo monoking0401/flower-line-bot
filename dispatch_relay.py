@@ -11,6 +11,8 @@ import json
 import os
 import re
 import time
+from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
@@ -22,6 +24,38 @@ USER = re.compile(r"U[0-9a-f]{32}\Z")
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z")
 COMMAND = re.compile(r"#小天綁定 [0-9a-f]{24}\Z")
 DOWNSTREAM = "https://tendispatchai.onrender.com"
+TEMPLATES = json.loads(Path(__file__).with_name("trip-templates.json").read_text(encoding="utf-8"))
+DOCUMENT_COMMAND = re.compile(r"^(?:#製單綁定 |製單(?:\n|$)|修改\n|製單說明$|公司清單$|選公司 |行程(?: |$)|選行程 |查單$|選單 |預覽$|正式輸出$|發送$|確認發送$|發送狀態$|取消$)|^(?=.*(?:行事曆|派車單)).{1,200}$")
+
+
+def template_reply(value):
+    if not isinstance(value, str):
+        return None
+    command = value.strip().rstrip("。！!：:")
+    aliases = {"送機表單": "送機格式", "接機表單": "接機格式", "接駁表單": "接駁格式"}
+    command = aliases.get(command, command)
+    if command in ("用車格式", "填寫格式"):
+        return "送機格式\n接機格式\n接駁格式"
+    return TEMPLATES.get(command)
+
+
+def document_url(value):
+    if not isinstance(value, str) or len(value) > 4096:
+        return False
+    u = urlparse(value)
+    return (u.scheme == "https" and u.netloc == "tendispatchai.onrender.com" and
+            u.path == "/v1/documents/download" and not u.fragment and
+            set(parse_qs(u.query)) == {"t"} and len(parse_qs(u.query)["t"]) == 1)
+
+
+def document_messages(messages):
+    if not isinstance(messages, list) or len(messages) != 2:
+        return False
+    image, pdf = messages
+    return (exact(image, ["type", "originalContentUrl", "previewImageUrl"]) and image["type"] == "image" and
+            image["originalContentUrl"] == image["previewImageUrl"] and document_url(image["originalContentUrl"]) and
+            exact(pdf, ["type", "text"]) and pdf["type"] == "text" and
+            isinstance(pdf["text"], str) and pdf["text"].startswith("派車單PDF：") and document_url(pdf["text"][7:]))
 
 
 def secret():
@@ -91,8 +125,8 @@ def validate_line(body):
         data = body["body"]
         if exact(data, ["to", "messages"]) and isinstance(data["to"], str) and GROUP.fullmatch(data["to"]):
             messages = data["messages"]
-            if (isinstance(messages, list) and 1 <= len(messages) <= 2 and
-                    all(exact(m, ["type", "text"]) and m["type"] == "text" and valid_text(m["text"]) for m in messages) and
+            if ((isinstance(messages, list) and 1 <= len(messages) <= 2 and
+                    all(exact(m, ["type", "text"]) and m["type"] == "text" and valid_text(m["text"]) for m in messages) or document_messages(messages)) and
                     isinstance(body["retry_key"], str) and UUID.fullmatch(body["retry_key"])):
                 return
     raise HTTPException(400, "Unsupported operation")
@@ -112,7 +146,7 @@ async def line_request(method, path, body=None, retry_key=None):
 @app.get("/")
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "xiaotian-dispatch-bot", "mode": "dispatch-relay", "version": "1.0.2", "native_contact_card": False}
+    return {"ok": True, "service": "xiaotian-dispatch-bot", "mode": "dispatch-relay", "version": "1.1.0", "native_contact_card": False, "trip_templates": True}
 
 
 @app.post("/relay/info")
@@ -194,6 +228,32 @@ async def forward_binding(body):
         print("[DISPATCH BIND] response not confirmed", flush=True)
 
 
+async def reply_text(reply_token, value):
+    if not isinstance(reply_token, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,256}", reply_token):
+        return
+    if not valid_text(value):
+        value = "內容過長，請縮小行程查詢範圍，或在APK開啟單據。"
+    try:
+        await line_request("POST", "/v2/bot/message/reply", {"replyToken": reply_token, "messages": [{"type": "text", "text": value}]})
+    except Exception:
+        print('[DISPATCH REPLY] response not confirmed', flush=True)
+
+
+async def forward_document(bot, event, reply_token):
+    raw = json.dumps({"destination": bot, "event": event}, ensure_ascii=False, separators=(",", ":")).encode()
+    stamp = str(int(time.time()))
+    path = "/v1/documents/bridge-command"
+    try:
+        async with httpx.AsyncClient(timeout=50, follow_redirects=False) as client:
+            response = await client.post(DOWNSTREAM + path, content=raw, headers={"Content-Type": "application/json",
+                "X-Relay-Timestamp": stamp, "X-Relay-Signature": signature(secret(), stamp, "POST", path, raw)})
+        result = response.json()
+        value = result.get("reply") if response.status_code == 200 else result.get("error", {}).get("message", "製單服務尚未就緒，請稍後再試。")
+        await reply_text(reply_token, value or "未取得完整結果，請在APK查詢目前單據。")
+    except Exception:
+        await reply_text(reply_token, "製單結果尚未確認，請查單；不要重貼建立另一張。")
+
+
 @app.post("/webhook")
 async def webhook(req: Request, background: BackgroundTasks):
     secret()
@@ -216,6 +276,18 @@ async def webhook(req: Request, background: BackgroundTasks):
         if not isinstance(event, dict):
             continue
         message, source = event.get("message"), event.get("source")
+        if (event.get("type") == "message" and event.get("mode") == "active" and isinstance(message, dict) and
+                message.get("type") == "text" and isinstance(source, dict) and isinstance(event.get("timestamp"), int) and
+                abs(time.time() * 1000 - event["timestamp"]) < 300000):
+            template = template_reply(message.get("text"))
+            if template:
+                background.add_task(reply_text, event.get("replyToken"), template)
+            elif (source.get("type") == "user" and USER.fullmatch(source.get("userId", "")) and
+                  isinstance(message.get("text"), str) and len(message["text"]) <= 12000 and DOCUMENT_COMMAND.search(message["text"])):
+                selected_event = {"source": {"type": "user", "userId": source["userId"]},
+                                  "message": {"type": "text", "text": message["text"], "id": message.get("id", "")},
+                                  "webhookEventId": event.get("webhookEventId", ""), "timestamp": event["timestamp"]}
+                background.add_task(forward_document, bot, selected_event, event.get("replyToken"))
         if (event.get("type") == "message" and event.get("mode") == "active" and isinstance(message, dict) and
                 message.get("type") == "text" and isinstance(message.get("text"), str) and COMMAND.fullmatch(message["text"]) and
                 isinstance(source, dict) and source.get("type") == "group" and isinstance(source.get("groupId"), str) and
