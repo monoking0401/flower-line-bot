@@ -26,4 +26,7 @@ def test_shortcuts_unknown_and_regular_chat():
     assert '支援' in dispatch_format_reply('派車格式 司機 送機未知')
     for text in ('不要派車格式', '我想問指令', '司機送清泉崗', None):
         assert dispatch_format_reply(text) is None
-    assert '【電子派車單｜機器人私訊操作】' in dispatch_format_reply('指令')
+    assert '選公司 1' not in dispatch_format_reply('指令')
+    assert '選公司 1' in dispatch_format_reply('派車單功能')
+    assert '派車格式 司機 接機松山' in dispatch_format_reply('指令')
+    assert dispatch_format_reply('派單格式') == dispatch_format_reply('派車格式')

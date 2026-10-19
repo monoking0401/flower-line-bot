@@ -136,7 +136,7 @@ def test_binding_receipt_log_contains_counts_without_codes_group_names_or_sender
     raw,h=line_signed(webhook([event(),event("private-ordinary-chat")]))
     assert client.post("/webhook",content=raw,headers=h).status_code==200
     output=capsys.readouterr().out
-    assert json.loads(output)=={"event":"dispatch_webhook_received","event_count":2,"binding_count":1}
+    assert json.loads(output)=={"event":"dispatch_webhook_received","event_count":2,"binding_count":1,"template_count":0,"max_template_age_ms":0}
     for private in ["private-ordinary-chat",GROUP,"a"*24,BOT]:
         assert private not in output
 
@@ -205,3 +205,22 @@ def test_document_menu_commands_route_private_only(client,monkeypatch,text):
     e['source']={'type':'user','userId':BOT};raw,h=line_signed(webhook([e]))
     assert client.post('/webhook',content=raw,headers=h).status_code==200
     forward.assert_awaited_once()
+
+@pytest.mark.parametrize('status',[200,400,429])
+def test_reply_status_logged_without_message_or_token(client,monkeypatch,capsys,status):
+    import asyncio
+    monkeypatch.setattr(relay,'line_request',AsyncMock(return_value=httpx.Response(status,json={'message':'private-error'})))
+    asyncio.run(relay.reply_text('private-token','private-message'))
+    output=capsys.readouterr().out
+    assert json.loads(output)=={'event':'dispatch_reply_result','status':status,'accepted':status==200}
+    assert 'private' not in output
+
+
+def test_document_help_is_local_in_group(client,monkeypatch):
+    reply=AsyncMock();forward=AsyncMock()
+    monkeypatch.setattr(relay,'reply_text',reply)
+    monkeypatch.setattr(relay,'forward_document',forward)
+    raw,h=line_signed(webhook([event('派車單功能')]))
+    assert client.post('/webhook',content=raw,headers=h).status_code==200
+    reply.assert_awaited_once_with('never-forward',relay.template_reply('派車單功能'))
+    forward.assert_not_awaited()

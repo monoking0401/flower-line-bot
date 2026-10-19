@@ -150,7 +150,7 @@ async def line_request(method, path, body=None, retry_key=None):
 @app.get("/")
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "xiaotian-dispatch-bot", "mode": "dispatch-relay", "version": "1.2.0", "native_contact_card": False, "trip_templates": True, "driver_dispatch_templates": True, "command_menu": True}
+    return {"ok": True, "service": "xiaotian-dispatch-bot", "mode": "dispatch-relay", "version": "1.2.1", "native_contact_card": False, "trip_templates": True, "driver_dispatch_templates": True, "command_menu": True}
 
 
 @app.post("/relay/info")
@@ -238,7 +238,8 @@ async def reply_text(reply_token, value):
     if not valid_text(value):
         value = "內容過長，請縮小行程查詢範圍，或在APK開啟單據。"
     try:
-        await line_request("POST", "/v2/bot/message/reply", {"replyToken": reply_token, "messages": [{"type": "text", "text": value}]})
+        response = await line_request("POST", "/v2/bot/message/reply", {"replyToken": reply_token, "messages": [{"type": "text", "text": value}]})
+        print(json.dumps({"event": "dispatch_reply_result", "status": response.status_code, "accepted": response.status_code == 200}), flush=True)
     except Exception:
         print('[DISPATCH REPLY] response not confirmed', flush=True)
 
@@ -276,6 +277,8 @@ async def webhook(req: Request, background: BackgroundTasks):
     if not isinstance(body, dict) or body.get("destination") != bot or not isinstance(body.get("events"), list) or len(body["events"]) > 100:
         raise HTTPException(400, "Invalid LINE events")
     selected = []
+    template_count = 0
+    max_event_age_ms = 0
     for event in body["events"]:
         if not isinstance(event, dict):
             continue
@@ -285,6 +288,8 @@ async def webhook(req: Request, background: BackgroundTasks):
                 abs(time.time() * 1000 - event["timestamp"]) < 300000):
             template = template_reply(message.get("text"))
             if template:
+                template_count += 1
+                max_event_age_ms = max(max_event_age_ms, int(time.time() * 1000 - event["timestamp"]))
                 background.add_task(reply_text, event.get("replyToken"), template)
             elif (source.get("type") == "user" and USER.fullmatch(source.get("userId", "")) and
                   isinstance(message.get("text"), str) and len(message["text"]) <= 12000 and DOCUMENT_COMMAND.search(message["text"])):
@@ -299,7 +304,7 @@ async def webhook(req: Request, background: BackgroundTasks):
             selected.append({"type": "message", "mode": "active", "timestamp": event["timestamp"],
                 "source": {"type": "group", "groupId": source["groupId"]}, "message": {"type": "text", "text": message["text"]}})
     print(json.dumps({"event": "dispatch_webhook_received", "event_count": len(body["events"]),
-                      "binding_count": len(selected)}), flush=True)
+                      "binding_count": len(selected), "template_count": template_count, "max_template_age_ms": max_event_age_ms}), flush=True)
     if selected:
         background.add_task(forward_binding, {"destination": bot, "events": selected})
     return {"ok": True}
