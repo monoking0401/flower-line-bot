@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 import httpx
+from dispatch_formats import dispatch_format_reply
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
@@ -25,12 +26,15 @@ UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a
 COMMAND = re.compile(r"#小天綁定 [0-9a-f]{24}\Z")
 DOWNSTREAM = "https://tendispatchai.onrender.com"
 TEMPLATES = json.loads(Path(__file__).with_name("trip-templates.json").read_text(encoding="utf-8"))
-DOCUMENT_COMMAND = re.compile(r"^(?:#製單綁定 |製單(?:\n|$)|修改\n|製單說明$|公司清單$|選公司 |行程(?: |$)|選行程 |查單$|選單 |預覽$|正式輸出$|發送$|確認發送$|發送狀態$|取消$)|^(?=.*(?:行事曆|派車單)).{1,200}$")
+DOCUMENT_COMMAND = re.compile(r"^(?:#製單綁定 |製單(?:\n|$)|修改\n|製單說明$|司機清單$|選司機 |儲存司機$|承租人同乘客$|租賃單$|公司清單$|選公司 |行程(?: |$)|選行程 |查單$|選單 |預覽$|正式輸出$|發送$|確認發送$|發送狀態$|取消$)|^(?=.*(?:行事曆|派車單)).{1,200}$")
 
 
 def template_reply(value):
     if not isinstance(value, str):
         return None
+    dispatch = dispatch_format_reply(value)
+    if dispatch:
+        return dispatch
     command = value.strip().rstrip("。！!：:")
     aliases = {"送機表單": "送機格式", "接機表單": "接機格式", "接駁表單": "接駁格式"}
     command = aliases.get(command, command)
@@ -146,7 +150,7 @@ async def line_request(method, path, body=None, retry_key=None):
 @app.get("/")
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "xiaotian-dispatch-bot", "mode": "dispatch-relay", "version": "1.1.0", "native_contact_card": False, "trip_templates": True}
+    return {"ok": True, "service": "xiaotian-dispatch-bot", "mode": "dispatch-relay", "version": "1.2.0", "native_contact_card": False, "trip_templates": True, "driver_dispatch_templates": True, "command_menu": True}
 
 
 @app.post("/relay/info")

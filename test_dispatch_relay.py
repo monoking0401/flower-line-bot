@@ -184,3 +184,24 @@ def test_document_image_pdf_whitelist():
     for bad in ['https://evil.test/file','https://tendispatchai.onrender.com@evil.test/v1/documents/download?t=signed',url+'&redirect=evil',url+'#fragment']:
         messages[0]['originalContentUrl']=bad;messages[0]['previewImageUrl']=bad
         assert not relay.document_messages(messages)
+
+@pytest.mark.parametrize('text',['派車格式 司機 送機清泉崗','派車格式 司機 接機小港','指令'])
+def test_group_dispatch_commands_reply_locally(client,monkeypatch,text):
+    reply=AsyncMock();forward=AsyncMock();binding=AsyncMock()
+    monkeypatch.setattr(relay,'reply_text',reply)
+    monkeypatch.setattr(relay,'forward_document',forward)
+    monkeypatch.setattr(relay,'forward_binding',binding)
+    raw,h=line_signed(webhook([event(text)]))
+    assert client.post('/webhook',content=raw,headers=h).status_code==200
+    reply.assert_awaited_once_with('never-forward',relay.template_reply(text))
+    forward.assert_not_awaited();binding.assert_not_awaited()
+
+@pytest.mark.parametrize('text',['司機清單','選司機 1','儲存司機','承租人同乘客','租賃單'])
+def test_document_menu_commands_route_private_only(client,monkeypatch,text):
+    forward=AsyncMock();monkeypatch.setattr(relay,'forward_document',forward)
+    e=event(text);raw,h=line_signed(webhook([e]))
+    assert client.post('/webhook',content=raw,headers=h).status_code==200
+    forward.assert_not_awaited()
+    e['source']={'type':'user','userId':BOT};raw,h=line_signed(webhook([e]))
+    assert client.post('/webhook',content=raw,headers=h).status_code==200
+    forward.assert_awaited_once()
